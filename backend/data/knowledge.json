@@ -1,0 +1,39 @@
+{
+  "pricing": {
+    "basic": {
+      "price": "$29/month",
+      "features": [
+        "10 videos/month",
+        "720p resolution",
+        "Basic editing tools",
+        "Email support"
+      ]
+    },
+    "pro": {
+      "price": "$79/month",
+      "features": [
+        "Unlimited videos",
+        "4K resolution",
+        "AI captions",
+        "Advanced editing tools",
+        "Priority 24/7 support"
+      ]
+    }
+  },
+  "policies": {
+    "refund": "No refunds after 7 days of purchase.",
+    "support": "24/7 support is available only on the Pro plan. Basic plan users have email support only.",
+    "trial": "A 7-day free trial is available for the Pro plan with no credit card required."
+  },
+  "product": {
+    "name": "AutoStream",
+    "description": "AutoStream is a SaaS platform that provides automated video editing tools for content creators. It helps YouTubers, Instagram creators, and TikTokers edit videos faster using AI.",
+    "use_cases": [
+      "Automated video trimming and cutting",
+      "AI-generated captions and subtitles",
+      "Background music suggestions",
+      "Thumbnail generation",
+      "Multi-platform export"
+    ]
+  }
+}
