@@ -1,5 +1,5 @@
 from datetime import datetime
-from config.logging_config import get_logger
+from backend.config.logging_config import get_logger
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -19,7 +19,7 @@ def send_welcome_email(name: str, email: str, platform: str) -> bool:
     
     This function sends an automated welcome email using SMTP.
     In production, you would use:
-      - SendGrid API
+      - SendGrid API 
       - AWS SES
       - Mailgun
       - Postmark
@@ -39,6 +39,7 @@ def send_welcome_email(name: str, email: str, platform: str) -> bool:
         smtp_user = os.getenv("SMTP_USER")
         smtp_password = os.getenv("SMTP_PASSWORD")
         from_email = os.getenv("FROM_EMAIL", smtp_user)
+        website_url = os.getenv("WEBSITE_URL", "http://localhost:3000")
         
         # Skip email sending if SMTP not configured
         if not smtp_user or not smtp_password:
@@ -82,7 +83,7 @@ def send_welcome_email(name: str, email: str, platform: str) -> bool:
               </ul>
               
               <p style="margin-top: 30px;">
-                <a href="https://autostream.example.com/dashboard" 
+                <a href="{website_url}" 
                    style="background-color: #6366f1; color: white; padding: 12px 24px; 
                           text-decoration: none; border-radius: 5px; display: inline-block;">
                   Get Started Now

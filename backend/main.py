@@ -14,11 +14,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from agent.graph import agent_graph
-from agent.state import AgentState
-from agent.tools import get_all_leads
-from config.logging_config import setup_logging, get_logger
-from config.settings import settings
+from backend.agent.graph import agent_graph
+from backend.agent.state import AgentState
+from backend.agent.tools import get_all_leads
+from backend.config.logging_config import setup_logging, get_logger
+from backend.config.settings import settings
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Logging Configuration

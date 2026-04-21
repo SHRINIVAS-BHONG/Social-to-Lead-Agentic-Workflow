@@ -13,6 +13,22 @@ langchain-community==0.2.1
 langchain-huggingface==0.0.3
 huggingface-hub==0.23.0
 
+# ── Optional LLM providers (install as needed) ──────────────────────
+# OpenAI (best quality, paid)
+# openai>=1.0.0
+
+# Groq (fastest, free tier)
+# groq>=0.4.0
+
+# Anthropic Claude (most intelligent, paid)
+# anthropic>=0.25.0
+
+# Google Gemini (free tier)
+# google-generativeai>=0.5.0
+
+# Local Ollama (offline)
+# requests>=2.31.0
+
 # ── RAG / Vector store ───────────────────────────────────────────────
 faiss-cpu==1.13.2
 sentence-transformers==3.0.1

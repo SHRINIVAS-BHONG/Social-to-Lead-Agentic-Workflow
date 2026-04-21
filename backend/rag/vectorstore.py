@@ -10,9 +10,9 @@ from typing import Optional
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.schema import Document
-from rag.loader import load_knowledge_base, KnowledgeBaseValidationError
-from config.logging_config import get_logger
-from config.settings import settings
+from backend.rag.loader import load_knowledge_base, KnowledgeBaseValidationError
+from backend.config.logging_config import get_logger
+from backend.config.settings import settings
 
 logger = get_logger(__name__)
 
