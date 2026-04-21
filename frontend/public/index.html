@@ -3,16 +3,198 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AutoStream AI Agent</title>
+    <meta name="theme-color" content="#6366f1" />
+    <meta name="description" content="AI-powered video editing assistant for content creators" />
+    
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="AutoStream">
+    <meta name="application-name" content="AutoStream">
+    
+    <title>AutoStream AI Assistant</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
       html, body, #root { height: 100%; margin: 0; padding: 0; }
+      
+      /* PWA Install Prompt Styles */
+      .pwa-install-prompt {
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #1a1a2e, #16213e);
+        border: 1px solid #6366f1;
+        border-radius: 12px;
+        padding: 1rem;
+        color: white;
+        z-index: 1000;
+        backdrop-filter: blur(20px);
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+        animation: slideUp 0.3s ease-out;
+      }
+      
+      @keyframes slideUp {
+        from { transform: translateY(100px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+      
+      .pwa-install-content {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
+      
+      .pwa-install-icon {
+        font-size: 1.5rem;
+        filter: drop-shadow(0 0 10px rgba(99, 102, 241, 0.6));
+      }
+      
+      .pwa-install-text {
+        flex: 1;
+      }
+      
+      .pwa-install-title {
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+        background: linear-gradient(135deg, #6366f1, #ec4899);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      
+      .pwa-install-desc {
+        font-size: 0.9rem;
+        opacity: 0.8;
+      }
+      
+      .pwa-install-btn, .pwa-dismiss-btn {
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        margin-left: 0.5rem;
+      }
+      
+      .pwa-install-btn {
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        color: white;
+        border: none;
+      }
+      
+      .pwa-install-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+      }
+      
+      .pwa-dismiss-btn {
+        background: transparent;
+        color: #6366f1;
+        border: 1px solid #6366f1;
+      }
+      
+      .pwa-dismiss-btn:hover {
+        background: rgba(99, 102, 241, 0.1);
+      }
+      
+      /* PWA mode styles */
+      body.pwa-mode {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+      }
     </style>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
+    
+    <!-- PWA Install Prompt -->
+    <div id="pwa-install-prompt" class="pwa-install-prompt" style="display: none;">
+      <div class="pwa-install-content">
+        <span class="pwa-install-icon">📱</span>
+        <div class="pwa-install-text">
+          <div class="pwa-install-title">Install AutoStream</div>
+          <div class="pwa-install-desc">Get the full app experience with offline support</div>
+        </div>
+        <button id="pwa-install-btn" class="pwa-install-btn">Install</button>
+        <button id="pwa-dismiss-btn" class="pwa-dismiss-btn">Later</button>
+      </div>
+    </div>
+    
+    <!-- Service Worker Registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((registration) => {
+              console.log('✅ SW registered: ', registration);
+              
+              // Check for updates
+              registration.addEventListener('updatefound', () => {
+                const newWorker = registration.installing;
+                newWorker.addEventListener('statechange', () => {
+                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    // New content available, show update prompt
+                    if (confirm('New version available! Reload to update?')) {
+                      newWorker.postMessage({ type: 'SKIP_WAITING' });
+                      window.location.reload();
+                    }
+                  }
+                });
+              });
+            })
+            .catch((registrationError) => {
+              console.log('❌ SW registration failed: ', registrationError);
+            });
+        });
+      }
+      
+      // PWA Install Prompt
+      let deferredPrompt;
+      
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        
+        // Show custom install prompt
+        const installPrompt = document.getElementById('pwa-install-prompt');
+        const installBtn = document.getElementById('pwa-install-btn');
+        const dismissBtn = document.getElementById('pwa-dismiss-btn');
+        
+        if (installPrompt && !localStorage.getItem('pwa-dismissed')) {
+          installPrompt.style.display = 'block';
+          
+          installBtn.addEventListener('click', async () => {
+            installPrompt.style.display = 'none';
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            console.log(`PWA install outcome: ${outcome}`);
+            deferredPrompt = null;
+          });
+          
+          dismissBtn.addEventListener('click', () => {
+            installPrompt.style.display = 'none';
+            localStorage.setItem('pwa-dismissed', 'true');
+          });
+        }
+      });
+      
+      // Track PWA usage
+      window.addEventListener('appinstalled', () => {
+        console.log('🎉 PWA installed successfully!');
+        localStorage.setItem('pwa-installed', 'true');
+      });
+      
+      // Detect if running as PWA
+      if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+        console.log('🚀 Running as PWA');
+        document.body.classList.add('pwa-mode');
+      }
+    </script>
   </body>
 </html>

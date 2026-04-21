@@ -22,10 +22,10 @@ class Settings:
     
     # Model selection - HuggingFace Inference API models
     # Popular free models: 
-    # - mistralai/Mistral-7B-Instruct-v0.3 (better conversational AI)
+    # - meta-llama/Meta-Llama-3-8B-Instruct (WORKING, recommended)
     # - microsoft/DialoGPT-large (specialized for conversations)
-    # - meta-llama/Meta-Llama-3-8B-Instruct (general purpose)
-    LLM_MODEL: str = os.getenv("LLM_MODEL", "mistralai/Mistral-7B-Instruct-v0.3")
+    # - HuggingFaceH4/zephyr-7b-beta (good for chat)
+    LLM_MODEL: str = os.getenv("LLM_MODEL", "meta-llama/Meta-Llama-3-8B-Instruct")
     LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0.5"))
     
     # ── Logging Configuration ────────────────────────────────────────

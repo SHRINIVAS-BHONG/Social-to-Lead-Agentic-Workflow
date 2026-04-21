@@ -10,9 +10,11 @@ Endpoints:
 import uuid
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import asyncio
+import json
 
 from backend.agent.graph import agent_graph
 from backend.agent.state import AgentState
@@ -196,6 +198,122 @@ async def health():
         "service": settings.API_TITLE,
         "version": settings.API_VERSION,
     }
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time streaming responses."""
+    await websocket.accept()
+    session_id = None
+    
+    try:
+        while True:
+            # Receive message from client
+            data = await websocket.receive_text()
+            message_data = json.loads(data)
+            
+            user_message = message_data.get("message", "")
+            session_id = message_data.get("session_id") or str(uuid.uuid4())
+            
+            if not user_message:
+                continue
+                
+            logger.info(
+                "WebSocket message received",
+                extra={
+                    "session_id": session_id[:8],
+                    "message_preview": user_message[:60],
+                }
+            )
+            
+            # Get or initialize session state
+            if session_id not in sessions:
+                sessions[session_id] = AgentState(
+                    messages=[],
+                    intent="",
+                    retrieved_docs=[],
+                    lead_info={},
+                    is_ready_for_tool=False,
+                    tool_executed=False,
+                    response="",
+                    session_id=session_id,
+                )
+            
+            state = sessions[session_id]
+            state["messages"].append({"role": "user", "content": user_message})
+            
+            # Send typing indicator
+            await websocket.send_text(json.dumps({
+                "type": "typing",
+                "session_id": session_id
+            }))
+            
+            # Process with agent
+            result: AgentState = agent_graph.invoke(state)
+            sessions[session_id] = {**state, **result, "session_id": session_id}
+            
+            # Stream response word by word
+            agent_response = result.get("response", "I'm sorry, I couldn't process that.")
+            sessions[session_id]["messages"].append(
+                {"role": "assistant", "content": agent_response}
+            )
+            
+            # Send streaming response
+            words = agent_response.split()
+            streamed_text = ""
+            
+            for i, word in enumerate(words):
+                streamed_text += word + " "
+                
+                await websocket.send_text(json.dumps({
+                    "type": "stream",
+                    "content": streamed_text.strip(),
+                    "session_id": session_id,
+                    "intent": result.get("intent", ""),
+                    "lead_info": result.get("lead_info", {}),
+                    "lead_captured": bool(
+                        result.get("lead_info", {}).get("name") and
+                        result.get("lead_info", {}).get("email") and
+                        result.get("lead_info", {}).get("platform") and
+                        result.get("tool_executed") is False
+                    ),
+                    "is_complete": False
+                }))
+                
+                # Add realistic typing delay
+                await asyncio.sleep(0.05 if i < len(words) - 1 else 0.1)
+            
+            # Send completion signal
+            await websocket.send_text(json.dumps({
+                "type": "complete",
+                "content": agent_response,
+                "session_id": session_id,
+                "intent": result.get("intent", ""),
+                "lead_info": result.get("lead_info", {}),
+                "lead_captured": bool(
+                    result.get("lead_info", {}).get("name") and
+                    result.get("lead_info", {}).get("email") and
+                    result.get("lead_info", {}).get("platform") and
+                    result.get("tool_executed") is False
+                ),
+                "is_complete": True
+            }))
+            
+    except WebSocketDisconnect:
+        logger.info(
+            "WebSocket disconnected",
+            extra={"session_id": session_id[:8] if session_id else "unknown"}
+        )
+    except Exception as exc:
+        logger.error(
+            "WebSocket error",
+            extra={"error": str(exc)},
+            exc_info=True
+        )
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "message": "An error occurred while processing your message."
+        }))
 
 
 @app.get("/leads")
