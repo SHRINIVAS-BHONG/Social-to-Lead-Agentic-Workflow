@@ -1,215 +1,485 @@
-# AutoStream AI Agent
-### Social-to-Lead Agentic Workflow — Built for ServiceHive / Inflx
+# 🎬 AutoStream AI Agent
 
-> A production-ready Conversational AI Agent that converts social media conversations into qualified business leads using **LangGraph**, **Claude 3 Haiku**, **RAG (FAISS)**, and **FastAPI + React**.
+> **AI-Powered Conversational Agent for Video Editing SaaS**  
+> Transform social media conversations into qualified business leads using intelligent AI agents.
+
+[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![React](https://img.shields.io/badge/React-18+-61DAFB.svg)](https://reactjs.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-0.2+-FF6B6B.svg)](https://langchain-ai.github.io/langgraph/)
+
+---
+
+## 📋 Table of Contents
+
+- [Overview](#-overview)
+- [Features](#-features)
+- [Tech Stack](#-tech-stack)
+- [Project Structure](#-project-structure)
+- [Installation](#-installation)
+- [Configuration](#-configuration)
+- [Usage](#-usage)
+- [Architecture](#-architecture)
+- [Deployment](#-deployment)
+- [API Documentation](#-api-documentation)
+- [Contributing](#-contributing)
+- [License](#-license)
+
+---
+
+## 🌟 Overview
+
+**AutoStream AI Agent** is a production-ready conversational AI system designed for SaaS businesses. It intelligently engages with potential customers, answers product questions, and automatically captures qualified leads with email notifications.
+
+### Key Capabilities
+
+- 🤖 **Intelligent Conversations**: Natural language understanding with context awareness
+- 🎯 **Intent Classification**: Automatically detects user intent (greeting, inquiry, high-intent)
+- 📚 **RAG-Powered Responses**: Retrieves accurate information from knowledge base
+- 📧 **Automated Lead Capture**: Collects name, email, and platform with email notifications
+- 🎨 **Modern UI/UX**: Dark premium theme with glassmorphism effects
+- 🔐 **Authentication System**: Sign in/Sign up with session management
+
+---
+
+## ✨ Features
+
+### Core Features
+
+- **Multi-Turn Conversations**: Maintains context across 5-6+ conversation turns
+- **Smart Lead Qualification**: Asks for information one field at a time
+- **Email Notifications**: Sends professional welcome emails to captured leads
+- **Real-Time Intent Detection**: Visual badges showing current conversation intent
+- **Knowledge Base Search**: FAISS vector store with semantic search
+- **Session Management**: Isolated conversations per user session
+
+### UI/UX Features
+
+- **Dark Premium Theme**: Modern gradient backgrounds with animations
+- **Glassmorphism Effects**: Frosted glass design throughout
+- **Responsive Design**: Works on desktop, tablet, and mobile
+- **Smooth Animations**: Slide-in, fade, and hover effects
+- **Real-Time Updates**: Live typing indicators and message delivery
+
+---
+
+## 🛠 Tech Stack
+
+### Backend
+- **Framework**: FastAPI (Python 3.9+)
+- **AI/ML**: LangGraph, HuggingFace Transformers
+- **Vector Store**: FAISS with sentence-transformers
+- **Email**: SMTP (Gmail, SendGrid, AWS SES)
+- **State Management**: LangGraph StateGraph
+
+### Frontend
+- **Framework**: React 18+
+- **Styling**: CSS3 with custom animations
+- **HTTP Client**: Fetch API
+- **Build Tool**: Create React App
+
+### Infrastructure
+- **API**: RESTful with FastAPI
+- **CORS**: Enabled for cross-origin requests
+- **Logging**: Structured JSON logging
+- **Environment**: Python dotenv
 
 ---
 
 ## 📁 Project Structure
 
 ```
-project/
+autostream-ai-agent/
 ├── backend/
-│   ├── main.py                  # FastAPI app — /chat, /health, /leads
 │   ├── agent/
-│   │   ├── state.py             # AgentState TypedDict
-│   │   ├── graph.py             # LangGraph StateGraph (nodes + edges)
-│   │   ├── nodes.py             # All 5 node functions
-│   │   └── tools.py             # mock_lead_capture() + lead log
+│   │   ├── graph.py          # LangGraph state machine
+│   │   ├── nodes.py          # Agent node functions
+│   │   ├── state.py          # State TypedDict
+│   │   ├── session.py        # Session management
+│   │   └── tools.py          # Lead capture & email
+│   ├── config/
+│   │   ├── settings.py       # Configuration
+│   │   └── logging_config.py # Logging setup
+│   ├── data/
+│   │   └── knowledge.json    # Knowledge base
 │   ├── rag/
-│   │   ├── loader.py            # JSON → text chunks
-│   │   └── vectorstore.py       # FAISS + HuggingFace embeddings
-│   └── data/
-│       └── knowledge.json       # AutoStream pricing, features, policies
+│   │   ├── loader.py         # Document loader
+│   │   └── vectorstore.py    # FAISS vector store
+│   └── main.py               # FastAPI application
 ├── frontend/
-│   ├── public/index.html
+│   ├── public/
+│   │   └── index.html
 │   └── src/
-│       ├── index.js
-│       ├── App.js
-│       ├── Chat.js              # Full chat UI with intent badge + lead panel
-│       └── api.js               # fetch() wrappers for backend
-├── requirements.txt
-├── .env.example
-└── README.md
+│       ├── App.js            # Main app component
+│       ├── App.css           # Global styles
+│       ├── LandingPage.js    # Landing page
+│       ├── Auth.js           # Authentication
+│       ├── Chat.js           # Chat interface
+│       ├── Chat.css          # Chat styles
+│       └── api.js            # API client
+├── .env.example              # Environment template
+├── .gitignore                # Git ignore rules
+├── requirements.txt          # Python dependencies
+└── README.md                 # This file
 ```
 
 ---
 
-## ⚙️ Local Setup & Run
+## 🚀 Installation
 
 ### Prerequisites
-- Python 3.9+
-- Node.js 18+
-- An **Anthropic API key** (get one at console.anthropic.com)
 
----
+- **Python 3.9+** - [Download](https://www.python.org/downloads/)
+- **Node.js 18+** - [Download](https://nodejs.org/)
+- **Git** - [Download](https://git-scm.com/)
 
-### 1. Clone & enter the project
+### Step 1: Clone Repository
 
 ```bash
-git clone <your-repo-url>
-cd project
+git clone https://github.com/yourusername/autostream-ai-agent.git
+cd autostream-ai-agent
 ```
 
-### 2. Backend setup
+### Step 2: Backend Setup
 
 ```bash
-# Create and activate a virtual environment
+# Create virtual environment
 python -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
 
-# Install all Python dependencies
+# Activate virtual environment
+# Windows:
+venv\Scripts\activate
+# macOS/Linux:
+source venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
-
-# Set your environment variable
-cp .env.example .env
-# Edit .env and add your ANTHROPIC_API_KEY
 ```
 
-### 3. Run the backend
-
-```bash
-cd backend
-uvicorn main:app --reload --port 8000
-```
-
-The API is now live at `http://localhost:8000`.
-- `POST /chat` — main conversation endpoint
-- `GET  /health` — health check
-- `GET  /leads`  — view all captured leads
-
-### 4. Frontend setup & run
+### Step 3: Frontend Setup
 
 ```bash
 cd frontend
 npm install
-npm start
 ```
-
-The React UI opens at `http://localhost:3000`.
 
 ---
 
-## 🏗️ Architecture (~200 words)
+## ⚙️ Configuration
 
-The system is built around a **LangGraph StateGraph** — a directed acyclic graph where each node is a pure function that reads from and writes to a shared `AgentState` TypedDict. This replaces linear chain logic with explicit, inspectable routing.
+### 1. Environment Variables
 
-**Graph flow:**
+Create `.env` file in the root directory:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your configuration:
+
+```env
+# LLM Configuration (Required)
+HUGGINGFACE_API_KEY=hf_your_token_here
+LLM_MODEL=meta-llama/Meta-Llama-3-8B-Instruct
+LLM_TEMPERATURE=0.5
+
+# Email Configuration (Optional)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your_email@gmail.com
+SMTP_PASSWORD=your_app_password
+FROM_EMAIL=your_email@gmail.com
+
+# RAG Configuration
+RAG_TOP_K=3
+MAX_CONVERSATION_TURNS=6
+```
+
+### 2. Get HuggingFace API Key (Free)
+
+1. Go to [HuggingFace Settings](https://huggingface.co/settings/tokens)
+2. Create free account (no credit card required)
+3. Click "New token" → Create with "Read" access
+4. Copy token to `.env` file
+
+### 3. Email Setup (Optional)
+
+**For Gmail:**
+1. Enable 2-Factor Authentication
+2. Generate App Password: [Google App Passwords](https://myaccount.google.com/apppasswords)
+3. Add credentials to `.env`
+
+**For SendGrid/AWS SES:** See deployment section
+
+---
+
+## 💻 Usage
+
+### Development Mode
+
+**Terminal 1 - Backend:**
+```bash
+cd backend
+python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Terminal 2 - Frontend:**
+```bash
+cd frontend
+npm start
+```
+
+### Access Application
+
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
+
+### Test Conversation Flow
+
+1. Open http://localhost:3000
+2. Click "Sign Up" and create account
+3. Start conversation:
+   ```
+   You: "Hi, tell me about your pricing"
+   Agent: [Explains pricing plans]
+   
+   You: "I want the Pro plan for YouTube"
+   Agent: [Asks for name]
+   
+   You: "John Doe"
+   Agent: [Asks for email]
+   
+   You: "john@example.com"
+   Agent: [Captures lead + sends email]
+   ```
+
+---
+
+## 🏗 Architecture
+
+### System Overview
+
+```
+┌─────────────┐      ┌──────────────┐      ┌─────────────┐
+│   React     │─────▶│   FastAPI    │─────▶│  LangGraph  │
+│  Frontend   │◀─────│   Backend    │◀─────│   Agent     │
+└─────────────┘      └──────────────┘      └─────────────┘
+                            │                      │
+                            ▼                      ▼
+                     ┌──────────────┐      ┌─────────────┐
+                     │    SMTP      │      │    FAISS    │
+                     │   Server     │      │ Vector Store│
+                     └──────────────┘      └─────────────┘
+```
+
+### LangGraph State Machine
 
 ```
 classify_intent
     ├─[inquiry/greeting]─► retrieve_docs ─► generate_response
     └─[high_intent]──────► qualify_lead
                                ├─[ready]──► execute_tool ─► generate_response
-                               └─[missing fields]──► generate_response
+                               └─[missing]─► generate_response
 ```
 
-**Why LangGraph over plain LangChain?** LangGraph gives us persistent, typed state across turns, conditional branching, and a clear separation between routing logic and node logic — essential for multi-turn lead collection where we must ask for one field at a time and only fire the tool when all three are present.
+### Key Components
 
-**State management:** A Python dict keyed by `session_id` holds the full `AgentState` between HTTP calls. Each request appends the new user message, invokes the compiled graph, and merges the result back. The state carries `messages` (full history), `intent`, `retrieved_docs`, `lead_info`, and `is_ready_for_tool`.
+**1. Intent Classifier**
+- Analyzes user messages
+- Classifies into: greeting, inquiry, high_intent
+- Routes to appropriate handler
 
-**RAG pipeline:** The knowledge base (`knowledge.json`) is split into semantic chunks, embedded with `all-MiniLM-L6-v2` (sentence-transformers), and indexed in a local FAISS vector store. Top-3 relevant chunks are injected into the system prompt at inference time.
+**2. RAG Retrieval**
+- Semantic search over knowledge base
+- FAISS vector store with embeddings
+- Returns top-3 relevant documents
+
+**3. Lead Qualification**
+- Extracts: name, email, platform
+- Validates completeness
+- Triggers tool when ready
+
+**4. Tool Execution**
+- Calls `mock_lead_capture()`
+- Sends welcome email
+- Returns confirmation
+
+**5. Response Generator**
+- Generates natural language replies
+- Injects RAG context
+- Handles multi-turn conversations
 
 ---
 
-## 🌐 WhatsApp Integration via Webhooks
+## 🌐 Deployment
 
-To deploy this agent on WhatsApp, use the **Meta Cloud API** (or Twilio for WhatsApp):
+### Option 1: Cloud Platforms
 
-### Architecture
+**Backend (Railway/Render/Fly.io)**
 
-```
-WhatsApp User
-     │
-     ▼
-Meta / Twilio Webhook  ──POST──►  FastAPI /webhook  endpoint
-                                        │
-                                        ▼
-                                 LangGraph Agent
-                                        │
-                                        ▼
-                              Response text sent back
-                              via Meta / Twilio REST API
+```bash
+# Railway
+railway up
+
+# Render
+render deploy
+
+# Fly.io
+fly deploy
 ```
 
-### Implementation Steps
+**Frontend (Vercel/Netlify)**
 
-**1. Add a `/webhook` endpoint in `main.py`:**
+```bash
+# Vercel
+vercel deploy
 
-```python
-@app.post("/webhook")
-async def whatsapp_webhook(payload: dict):
-    # Meta sends messages in this structure:
-    entry = payload["entry"][0]["changes"][0]["value"]
-    message = entry["messages"][0]
-    from_number = message["from"]
-    user_text   = message["text"]["body"]
-
-    # Reuse existing chat logic with phone number as session_id
-    result = await chat(ChatRequest(message=user_text, session_id=from_number))
-
-    # Send reply via Meta Graph API
-    send_whatsapp_reply(from_number, result.response)
-    return {"status": "ok"}
+# Netlify
+netlify deploy
 ```
 
-**2. Verify the webhook** — Meta requires a `GET /webhook` that confirms a `hub.verify_token`.
+### Option 2: Docker
 
-**3. Send replies** using the Meta Graph API:
+```bash
+# Build and run
+docker-compose up -d
 
-```python
-import httpx
+# View logs
+docker-compose logs -f
 
-def send_whatsapp_reply(to: str, text: str):
-    httpx.post(
-        f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages",
-        headers={"Authorization": f"Bearer {WHATSAPP_TOKEN}"},
-        json={
-            "messaging_product": "whatsapp",
-            "to": to,
-            "type": "text",
-            "text": {"body": text}
-        }
-    )
+# Stop
+docker-compose down
 ```
 
-**4. Expose locally** using `ngrok http 8000` and register the HTTPS URL in the Meta developer portal.
+### Option 3: Manual Server
 
-**Twilio alternative:** Replace the Meta API calls with `twilio.rest.Client().messages.create(...)` — the webhook shape is identical.
+```bash
+# Backend
+cd backend
+gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+
+# Frontend
+cd frontend
+npm run build
+# Serve build/ folder with nginx or similar
+```
+
+### Environment Variables for Production
+
+```env
+# Production settings
+LOG_LEVEL=INFO
+CORS_ORIGINS=https://yourdomain.com
+LLM_TEMPERATURE=0.5
+```
 
 ---
 
-## 🎬 Demo Flow
+## 📚 API Documentation
 
-| Turn | User says | Agent behaviour |
-|------|-----------|-----------------|
-| 1 | "Hi, tell me about your pricing" | RAG retrieval → explains Basic ($29) and Pro ($79) plans |
-| 2 | "That sounds great, I want to try the Pro plan for my YouTube channel" | Intent → `high_intent`; asks for name |
-| 3 | "My name is Jane Smith" | Extracts name; asks for email |
-| 4 | "jane@creator.io" | Extracts email; asks for platform |
-| 5 | *(platform already detected as YouTube)* | All fields ready → calls `mock_lead_capture()` → confirmation |
+### Endpoints
+
+**POST /chat**
+```json
+{
+  "message": "Hi, tell me about pricing",
+  "session_id": "optional-session-id"
+}
+```
+
+Response:
+```json
+{
+  "response": "AutoStream offers two plans...",
+  "session_id": "abc123",
+  "intent": "inquiry",
+  "lead_info": {},
+  "lead_captured": false
+}
+```
+
+**GET /health**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-04-21T12:00:00Z"
+}
+```
+
+**GET /leads**
+```json
+[
+  {
+    "name": "John Doe",
+    "email": "john@example.com",
+    "platform": "YouTube",
+    "captured_at": "2026-04-21T12:00:00Z"
+  }
+]
+```
 
 ---
 
-## ✅ Evaluation Checklist
+## 🤝 Contributing
 
-| Criterion | Implementation |
-|-----------|---------------|
-| Agent reasoning & intent detection | LLM-based 3-class classifier in `classify_intent` node |
-| Correct RAG use | FAISS + sentence-transformers; top-3 chunks injected into prompt |
-| Clean state management | `AgentState` TypedDict; LangGraph merge semantics; session dict |
-| Proper tool calling | `execute_tool` fires only when `name + email + platform` all present |
-| Code clarity | Modular `nodes.py / graph.py / tools.py / rag/`; fully commented |
-| Real-world deployability | FastAPI + CORS; WhatsApp webhook section above; `.env` config |
+Contributions are welcome! Please follow these steps:
+
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit changes (`git commit -m 'Add AmazingFeature'`)
+4. Push to branch (`git push origin feature/AmazingFeature`)
+5. Open Pull Request
+
+### Development Guidelines
+
+- Follow PEP 8 for Python code
+- Use ESLint for JavaScript code
+- Write descriptive commit messages
+- Add tests for new features
+- Update documentation
 
 ---
 
-## 🔑 Environment Variables
+## 📄 License
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | ✅ | Your Anthropic API key |
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-*Built for ServiceHive · Inflx assignment — AutoStream Social-to-Lead Agent*
+## 🙏 Acknowledgments
+
+- **LangChain/LangGraph** - Agent framework
+- **HuggingFace** - LLM inference
+- **FastAPI** - Backend framework
+- **React** - Frontend framework
+- **FAISS** - Vector similarity search
+
+---
+
+## 📞 Support
+
+For questions or issues:
+
+- **Email**: support@autostream.example.com
+- **Issues**: [GitHub Issues](https://github.com/yourusername/autostream-ai-agent/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/yourusername/autostream-ai-agent/discussions)
+
+---
+
+## 🎯 Roadmap
+
+- [ ] Add more LLM providers (OpenAI, Anthropic)
+- [ ] Implement user authentication with JWT
+- [ ] Add conversation history persistence
+- [ ] Create admin dashboard
+- [ ] Add analytics and metrics
+- [ ] Support multiple languages
+- [ ] Add voice input/output
+- [ ] Integrate with CRM systems
+
+---
+
+**Built with ❤️ for ServiceHive · Inflx Assignment**
+
+*AutoStream AI Agent - Transforming conversations into opportunities*

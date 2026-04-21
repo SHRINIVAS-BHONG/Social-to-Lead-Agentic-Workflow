@@ -205,6 +205,224 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ============================================
+# PROJECT SPECIFIC - AutoStream
+# ============================================
+
+# Environment variables (CRITICAL - Contains API keys and secrets)
+.env
+.env.local
+.env.*.local
+.envrc
+
+# Kiro IDE files
 .config.kiro
-.kiro
+.kiro/
+
+# Windows system files
 desktop.ini
+Thumbs.db
+*.lnk
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux system files
+*~
+.directory
+
+# ============================================
+# FRONTEND (React/Node.js)
+# ============================================
+
+# Dependencies
+frontend/node_modules/
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Production build
+frontend/build/
+frontend/dist/
+build/
+dist/
+
+# Testing
+frontend/coverage/
+coverage/
+
+# Misc frontend
+.DS_Store
+*.pem
+.eslintcache
+
+# Package manager lock files (optional - uncomment if you want to ignore)
+# frontend/package-lock.json
+# frontend/yarn.lock
+# frontend/pnpm-lock.yaml
+
+# ============================================
+# BACKEND (Python/FastAPI)
+# ============================================
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+backend/venv/
+backend/env/
+
+# Hypothesis testing cache
+.hypothesis/
+
+# Pytest cache
+.pytest_cache/
+backend/.pytest_cache/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+db.sqlite3
+
+# Logs
+*.log
+logs/
+backend/logs/
+
+# ============================================
+# IDE & EDITOR FILES
+# ============================================
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# PyCharm / IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Cursor AI
+.cursorignore
+.cursorindexingignore
+
+# ============================================
+# SENSITIVE DATA (NEVER COMMIT)
+# ============================================
+
+# API Keys and secrets
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# Email configuration (contains SMTP passwords)
+# Already covered by .env but adding explicit patterns
+*_credentials.json
+*_secrets.json
+
+# ============================================
+# TEMPORARY & CACHE FILES
+# ============================================
+
+# OS temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# Application cache
+.cache/
+*.cache
+
+# Thumbnails
+._*
+Thumbs.db
+
+# ============================================
+# DOCUMENTATION & NOTES (Optional)
+# ============================================
+
+# Personal notes (uncomment if you don't want to commit)
+# NOTES.md
+# TODO.md
+# SCRATCH.md
+
+# Demo videos and screenshots (large files)
+*.mp4
+*.mov
+*.avi
+*.mkv
+# screenshots/
+# demos/
+
+# ============================================
+# DEPLOYMENT & CI/CD
+# ============================================
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Kubernetes
+*.kubeconfig
+
+# ============================================
+# MISC
+# ============================================
+
+# Compressed files
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Large data files
+*.csv
+*.xlsx
+*.json.gz
+
+# Backup files
+*.backup
+*.old
+
+node_modules

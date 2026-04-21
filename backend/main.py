@@ -7,7 +7,6 @@ Endpoints:
   GET  /leads   → View all captured leads (admin/debug)
 """
 
-import logging
 import uuid
 from typing import Optional
 
@@ -18,28 +17,40 @@ from pydantic import BaseModel
 from agent.graph import agent_graph
 from agent.state import AgentState
 from agent.tools import get_all_leads
+from config.logging_config import setup_logging, get_logger
+from config.settings import settings
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Logging
+# Logging Configuration
 # ─────────────────────────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-)
-logger = logging.getLogger(__name__)
+setup_logging(level=settings.LOG_LEVEL, use_json=settings.LOG_JSON_FORMAT)
+logger = get_logger(__name__)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Validate Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+try:
+    settings.validate()
+    logger.info(
+        "Configuration validated successfully",
+        extra={"config": settings.get_info()}
+    )
+except ValueError as e:
+    logger.error(f"Configuration validation failed: {e}")
+    raise
 
 # ─────────────────────────────────────────────────────────────────────────────
 # App
 # ─────────────────────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="AutoStream AI Agent",
-    description="Social-to-Lead Agentic Workflow powered by LangGraph + Claude",
-    version="1.0.0",
+    title=settings.API_TITLE,
+    description=settings.API_DESCRIPTION,
+    version=settings.API_VERSION,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # Tighten this in production
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -72,6 +83,23 @@ class ChatResponse(BaseModel):
 # Routes
 # ─────────────────────────────────────────────────────────────────────────────
 
+@app.get("/")
+async def root():
+    """Root endpoint with API information."""
+    return {
+        "service": settings.API_TITLE,
+        "version": settings.API_VERSION,
+        "description": settings.API_DESCRIPTION,
+        "endpoints": {
+            "POST /chat": "Main chat endpoint - send messages to the AI agent",
+            "GET /health": "Health check endpoint",
+            "GET /leads": "View all captured leads",
+            "GET /docs": "Interactive API documentation (Swagger UI)"
+        },
+        "status": "running"
+    }
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     """
@@ -82,7 +110,13 @@ async def chat(request: ChatRequest):
     """
     try:
         session_id = request.session_id or str(uuid.uuid4())
-        logger.info(f"[Session {session_id[:8]}] User: {request.message!r}")
+        logger.info(
+            "Chat request received",
+            extra={
+                "session_id": session_id[:8],
+                "message_preview": request.message[:60],
+            }
+        )
 
         # ── Get or initialise session state ──────────────────────────
         if session_id not in sessions:
@@ -95,6 +129,10 @@ async def chat(request: ChatRequest):
                 tool_executed=False,
                 response="",
                 session_id=session_id,
+            )
+            logger.info(
+                "New session initialized",
+                extra={"session_id": session_id[:8]}
             )
 
         state = sessions[session_id]
@@ -123,8 +161,13 @@ async def chat(request: ChatRequest):
         )
 
         logger.info(
-            f"[Session {session_id[:8]}] Intent={result.get('intent')} | "
-            f"Lead={lead_info} | Captured={lead_captured}"
+            "Chat response generated",
+            extra={
+                "session_id": session_id[:8],
+                "intent": result.get("intent"),
+                "lead_info": lead_info,
+                "lead_captured": lead_captured,
+            }
         )
 
         return ChatResponse(
@@ -136,17 +179,31 @@ async def chat(request: ChatRequest):
         )
 
     except Exception as exc:
-        logger.exception(f"Error in /chat: {exc}")
+        logger.error(
+            "Error in /chat endpoint",
+            extra={"error": str(exc)},
+            exc_info=True
+        )
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "healthy", "service": "AutoStream AI Agent", "version": "1.0.0"}
+    logger.info("Health check requested")
+    return {
+        "status": "healthy",
+        "service": settings.API_TITLE,
+        "version": settings.API_VERSION,
+    }
 
 
 @app.get("/leads")
 async def list_leads():
     """Return all captured leads (for demo / admin purposes)."""
-    return {"leads": get_all_leads(), "total": len(get_all_leads())}
+    leads = get_all_leads()
+    logger.info(
+        "Leads list requested",
+        extra={"total_leads": len(leads)}
+    )
+    return {"leads": leads, "total": len(leads)}

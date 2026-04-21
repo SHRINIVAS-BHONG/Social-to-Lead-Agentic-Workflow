@@ -1,39 +1,25 @@
 import React, { useState, useRef, useEffect } from "react";
 import { sendMessage } from "./api";
+import "./Chat.css";
 
-/* ─── Intent badge colours ────────────────────────────────────────────── */
+/* ─── Intent badge colours (Dark Theme) ────────────────────────────────────────────── */
 const INTENT_STYLES = {
-  greeting:    { bg: "#e0f2fe", color: "#0369a1", label: "👋 Greeting"    },
-  inquiry:     { bg: "#fef9c3", color: "#854d0e", label: "🔍 Inquiry"     },
-  high_intent: { bg: "#dcfce7", color: "#166534", label: "🔥 High Intent" },
+  greeting:    { bg: "rgba(59, 130, 246, 0.15)", color: "#60a5fa", label: "👋 Greeting", border: "rgba(59, 130, 246, 0.3)"    },
+  inquiry:     { bg: "rgba(251, 191, 36, 0.15)", color: "#fbbf24", label: "🔍 Inquiry", border: "rgba(251, 191, 36, 0.3)"     },
+  high_intent: { bg: "rgba(34, 197, 94, 0.15)", color: "#22c55e", label: "🔥 High Intent", border: "rgba(34, 197, 94, 0.3)" },
 };
 
 /* ─── Single message bubble ───────────────────────────────────────────── */
 function Message({ msg }) {
   const isUser = msg.role === "user";
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: isUser ? "flex-end" : "flex-start",
-        marginBottom: 12,
-      }}
-    >
+    <div className={`message-container ${isUser ? 'user' : 'assistant'}`}>
       {!isUser && (
-        <div style={styles.avatar}>AS</div>
+        <div className="avatar assistant-avatar">
+          <span>🤖</span>
+        </div>
       )}
-      <div
-        style={{
-          ...styles.bubble,
-          backgroundColor: isUser ? "#6366f1" : "#ffffff",
-          color:           isUser ? "#ffffff" : "#1e293b",
-          borderRadius:    isUser ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-          boxShadow: isUser
-            ? "0 2px 8px rgba(99,102,241,0.35)"
-            : "0 2px 8px rgba(0,0,0,0.08)",
-        }}
-      >
-        {/* Render markdown-style bold (**text**) */}
+      <div className={`message-bubble ${isUser ? 'user-bubble' : 'assistant-bubble'}`}>
         <span
           dangerouslySetInnerHTML={{
             __html: msg.content
@@ -41,13 +27,11 @@ function Message({ msg }) {
               .replace(/\n/g, "<br/>"),
           }}
         />
-        <div style={{ fontSize: 11, opacity: 0.6, marginTop: 4, textAlign: "right" }}>
-          {msg.time}
-        </div>
+        <div className="message-time">{msg.time}</div>
       </div>
       {isUser && (
-        <div style={{ ...styles.avatar, backgroundColor: "#6366f1", marginLeft: 8, marginRight: 0 }}>
-          You
+        <div className="avatar user-avatar">
+          <span>👤</span>
         </div>
       )}
     </div>
@@ -57,29 +41,46 @@ function Message({ msg }) {
 /* ─── Lead info panel ─────────────────────────────────────────────────── */
 function LeadPanel({ leadInfo, leadCaptured }) {
   const fields = [
-    { key: "name",     label: "Name"     },
-    { key: "email",    label: "Email"    },
-    { key: "platform", label: "Platform" },
+    { key: "name",     label: "Name", icon: "👤"     },
+    { key: "email",    label: "Email", icon: "📧"    },
+    { key: "platform", label: "Platform", icon: "🎬" },
   ];
+  
   return (
-    <div style={styles.leadPanel}>
-      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: "#374151" }}>
-        {leadCaptured ? "✅ Lead Captured!" : "📋 Lead Progress"}
+    <div className="lead-panel">
+      <div className="lead-header">
+        <span className="lead-icon">{leadCaptured ? "✅" : "📋"}</span>
+        <span className="lead-title">
+          {leadCaptured ? "Lead Captured!" : "Lead Progress"}
+        </span>
       </div>
-      {fields.map(({ key, label }) => (
-        <div key={key} style={styles.leadRow}>
-          <span style={{ color: "#6b7280", fontSize: 12 }}>{label}:</span>
-          <span style={{ fontSize: 12, fontWeight: 600, color: leadInfo[key] ? "#166534" : "#9ca3af" }}>
-            {leadInfo[key] || "—"}
-          </span>
+      
+      <div className="lead-fields">
+        {fields.map(({ key, label, icon }) => (
+          <div key={key} className="lead-field">
+            <div className="lead-field-label">
+              <span className="field-icon">{icon}</span>
+              <span>{label}</span>
+            </div>
+            <div className={`lead-field-value ${leadInfo[key] ? 'filled' : 'empty'}`}>
+              {leadInfo[key] || "—"}
+            </div>
+          </div>
+        ))}
+      </div>
+      
+      {leadCaptured && (
+        <div className="lead-success-badge">
+          <span>🎉</span>
+          <span>Successfully captured!</span>
         </div>
-      ))}
+      )}
     </div>
   );
 }
 
 /* ─── Main Chat component ─────────────────────────────────────────────── */
-export default function Chat() {
+export default function Chat({ user, onLogout }) {
   const [messages,     setMessages]     = useState([]);
   const [input,        setInput]        = useState("");
   const [loading,      setLoading]      = useState(false);
@@ -97,12 +98,13 @@ export default function Chat() {
 
   /* Welcome message on mount */
   useEffect(() => {
+    const userName = user?.name || "there";
     setMessages([{
       role: "assistant",
-      content: "👋 Hi! I'm the AutoStream AI assistant. I can help you with pricing, features, and getting started. How can I help you today?",
+      content: `👋 Hi **${userName}**! I'm the AutoStream AI assistant. I can help you with pricing, features, and getting started. How can I help you today?`,
       time: now(),
     }]);
-  }, []);
+  }, [user]);
 
   function now() {
     return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -147,41 +149,76 @@ export default function Chat() {
   const intentStyle = INTENT_STYLES[intent] || {};
 
   return (
-    <div style={styles.root}>
+    <div className="chat-root">
       {/* ── Header ── */}
-      <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          <div style={styles.logo}>AS</div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>AutoStream AI</div>
-            <div style={{ fontSize: 12, opacity: 0.75 }}>Powered by Claude · LangGraph</div>
+      <div className="chat-header">
+        <div className="header-left">
+          <div className="header-logo">
+            <span className="logo-gradient">AutoStream</span>
+          </div>
+          <div className="header-info">
+            <div className="header-title">AI Assistant</div>
+            <div className="header-subtitle">Your intelligent video editing companion</div>
           </div>
         </div>
-        {intent && (
-          <div style={{ ...styles.intentBadge, backgroundColor: intentStyle.bg, color: intentStyle.color }}>
-            {intentStyle.label}
-          </div>
-        )}
+        
+        <div className="header-right">
+          {intent && (
+            <div 
+              className="intent-badge"
+              style={{ 
+                backgroundColor: intentStyle.bg, 
+                color: intentStyle.color,
+                border: `1px solid ${intentStyle.border}`
+              }}
+            >
+              {intentStyle.label}
+            </div>
+          )}
+          
+          {user && (
+            <div className="user-section">
+              <div className="user-info">
+                <div className="user-name">{user.name}</div>
+                <div className="user-email">{user.email}</div>
+              </div>
+              <button className="logout-btn" onClick={onLogout}>
+                <span>🚪</span>
+                <span>Logout</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── Body ── */}
-      <div style={styles.body}>
+      <div className="chat-body">
         {/* Messages */}
-        <div style={styles.messages}>
+        <div className="messages-container">
           {messages.map((msg, i) => <Message key={i} msg={msg} />)}
+          
           {loading && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
-              <div style={styles.avatar}>AS</div>
-              <div style={{ ...styles.bubble, backgroundColor: "#f3f4f6" }}>
-                <span style={styles.typing}>
-                  <span /><span /><span />
-                </span>
+            <div className="message-container assistant">
+              <div className="avatar assistant-avatar">
+                <span>🤖</span>
+              </div>
+              <div className="message-bubble assistant-bubble typing-bubble">
+                <div className="typing-indicator">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
               </div>
             </div>
           )}
+          
           {error && (
-            <div style={styles.errorBanner}>{error}</div>
+            <div className="error-banner">
+              <span>⚠️</span>
+              <span>{error}</span>
+            </div>
           )}
+          
           <div ref={bottomRef} />
         </div>
 
@@ -190,158 +227,25 @@ export default function Chat() {
       </div>
 
       {/* ── Input ── */}
-      <div style={styles.inputRow}>
+      <div className="chat-input-container">
         <textarea
-          style={styles.textarea}
+          className="chat-textarea"
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type a message… (Enter to send)"
+          placeholder="Type your message... (Press Enter to send)"
           rows={1}
           disabled={loading}
         />
         <button
-          style={{
-            ...styles.sendBtn,
-            opacity: loading || !input.trim() ? 0.5 : 1,
-            cursor:  loading || !input.trim() ? "not-allowed" : "pointer",
-          }}
+          className={`send-btn ${(!input.trim() || loading) ? 'disabled' : ''}`}
           onClick={handleSend}
           disabled={loading || !input.trim()}
         >
-          Send
+          <span className="send-icon">✈️</span>
+          <span>Send</span>
         </button>
       </div>
     </div>
   );
 }
-
-/* ─── Styles ─────────────────────────────────────────────────────────── */
-const styles = {
-  root: {
-    display:       "flex",
-    flexDirection: "column",
-    height:        "100vh",
-    maxWidth:      900,
-    margin:        "0 auto",
-    fontFamily:    "'Inter', 'Segoe UI', sans-serif",
-    background:    "#f8fafc",
-  },
-  header: {
-    display:        "flex",
-    alignItems:     "center",
-    justifyContent: "space-between",
-    padding:        "14px 20px",
-    background:     "#4f46e5",
-    color:          "#fff",
-    boxShadow:      "0 2px 12px rgba(79,70,229,0.4)",
-  },
-  headerLeft: {
-    display:    "flex",
-    alignItems: "center",
-    gap:        12,
-  },
-  logo: {
-    width:          40,
-    height:         40,
-    borderRadius:   10,
-    background:     "rgba(255,255,255,0.25)",
-    display:        "flex",
-    alignItems:     "center",
-    justifyContent: "center",
-    fontWeight:     800,
-    fontSize:       14,
-  },
-  intentBadge: {
-    padding:      "4px 12px",
-    borderRadius: 20,
-    fontSize:     12,
-    fontWeight:   600,
-  },
-  body: {
-    display:  "flex",
-    flex:     1,
-    overflow: "hidden",
-  },
-  messages: {
-    flex:         1,
-    overflowY:    "auto",
-    padding:      "20px 16px",
-  },
-  avatar: {
-    width:          34,
-    height:         34,
-    borderRadius:   "50%",
-    background:     "#e0e7ff",
-    color:          "#4f46e5",
-    display:        "flex",
-    alignItems:     "center",
-    justifyContent: "center",
-    fontWeight:     700,
-    fontSize:       10,
-    flexShrink:     0,
-    marginRight:    8,
-  },
-  bubble: {
-    maxWidth:   "72%",
-    padding:    "10px 14px",
-    lineHeight: 1.5,
-    fontSize:   14,
-  },
-  leadPanel: {
-    width:         220,
-    flexShrink:    0,
-    borderLeft:    "1px solid #e5e7eb",
-    padding:       20,
-    background:    "#fff",
-    overflowY:     "auto",
-  },
-  leadRow: {
-    display:        "flex",
-    justifyContent: "space-between",
-    marginBottom:   8,
-    gap:            6,
-  },
-  inputRow: {
-    display:      "flex",
-    gap:          10,
-    padding:      "12px 16px",
-    borderTop:    "1px solid #e5e7eb",
-    background:   "#fff",
-    alignItems:   "flex-end",
-  },
-  textarea: {
-    flex:        1,
-    padding:     "10px 14px",
-    borderRadius: 12,
-    border:      "1.5px solid #d1d5db",
-    fontSize:    14,
-    resize:      "none",
-    outline:     "none",
-    fontFamily:  "inherit",
-    lineHeight:  1.5,
-  },
-  sendBtn: {
-    padding:      "10px 22px",
-    borderRadius: 12,
-    background:   "#4f46e5",
-    color:        "#fff",
-    border:       "none",
-    fontWeight:   700,
-    fontSize:     14,
-    fontFamily:   "inherit",
-    flexShrink:   0,
-  },
-  errorBanner: {
-    background:   "#fee2e2",
-    color:        "#991b1b",
-    padding:      "8px 14px",
-    borderRadius: 8,
-    fontSize:     13,
-    marginTop:    8,
-  },
-  typing: {
-    display:  "inline-flex",
-    gap:      4,
-  },
-};

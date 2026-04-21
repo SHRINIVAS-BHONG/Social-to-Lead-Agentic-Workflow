@@ -10,38 +10,77 @@ Node execution order (determined by graph edges in graph.py):
 """
 
 import json
-import logging
-import os
+from huggingface_hub import InferenceClient
 
-from langchain_anthropic import ChatAnthropic
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 
-from .state import AgentState
-from .tools import mock_lead_capture
-from ..rag.vectorstore import retrieve_relevant_docs
+from agent.state import AgentState
+from agent.tools import mock_lead_capture
+from rag.vectorstore import retrieve_relevant_docs, VectorStoreInitializationError
+from config.logging_config import get_logger
+from config.settings import settings
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LLM factory
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_llm() -> ChatAnthropic:
-    """Return a configured Claude 3 Haiku LLM instance."""
-    return ChatAnthropic(
-        model="claude-3-haiku-20240307",
-        temperature=0.5,
-        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+def get_llm():
+    """Return a configured HuggingFace Inference Client."""
+    return InferenceClient(
+        model=settings.LLM_MODEL,
+        token=settings.HUGGINGFACE_API_KEY,
     )
+
+
+def call_llm(messages: list, max_tokens: int = 512) -> str:
+    """
+    Call HuggingFace Inference API with messages.
+    
+    Args:
+        messages: List of message dicts with 'role' and 'content'
+        max_tokens: Maximum tokens to generate
+        
+    Returns:
+        Generated text response
+    """
+    client = get_llm()
+    
+    # Convert messages to HuggingFace format
+    formatted_messages = []
+    for msg in messages:
+        if isinstance(msg, SystemMessage):
+            formatted_messages.append({"role": "system", "content": msg.content})
+        elif isinstance(msg, HumanMessage):
+            formatted_messages.append({"role": "user", "content": msg.content})
+        elif isinstance(msg, AIMessage):
+            formatted_messages.append({"role": "assistant", "content": msg.content})
+        elif isinstance(msg, dict):
+            formatted_messages.append(msg)
+    
+    try:
+        response = client.chat_completion(
+            messages=formatted_messages,
+            max_tokens=max_tokens,
+            temperature=settings.LLM_TEMPERATURE,
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        logger.error(f"LLM API call failed: {e}")
+        return "I apologize, but I'm having trouble processing your request right now."
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper – build conversation history for LLM context
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _build_lc_history(messages: list[dict], max_turns: int = 6) -> list:
+def _build_lc_history(messages: list[dict], max_turns: int = None) -> list:
     """Convert raw message dicts to LangChain message objects (last N turns)."""
+    if max_turns is None:
+        max_turns = settings.MAX_CONVERSATION_TURNS
+    
     history = []
     for msg in messages[-max_turns:]:
         if msg["role"] == "user":
@@ -101,13 +140,12 @@ Respond with ONE word only: greeting | inquiry | high_intent"""
         f"Classify the intent of the last user message."
     )
 
-    llm = get_llm()
-    response = llm.invoke([
+    raw = call_llm([
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_prompt),
     ])
 
-    raw = response.content.strip().lower()
+    raw = raw.strip().lower()
 
     if "high_intent" in raw or "high intent" in raw:
         intent = "high_intent"
@@ -116,7 +154,13 @@ Respond with ONE word only: greeting | inquiry | high_intent"""
     else:
         intent = "greeting"
 
-    logger.info(f"[Intent] {intent} — user said: {user_msg[:60]!r}")
+    logger.info(
+        "Intent classified",
+        extra={
+            "intent": intent,
+            "user_message_preview": user_msg[:60],
+        }
+    )
     return {"intent": intent}
 
 
@@ -128,6 +172,9 @@ def rag_retrieval_node(state: AgentState) -> dict:
     """
     Perform semantic search over the local FAISS vector store and
     return the top-k relevant knowledge-base chunks.
+    
+    If vector store initialization fails, returns empty docs list
+    and logs the error for graceful degradation.
     """
     messages = state.get("messages", [])
     user_msg = _last_user_message(messages)
@@ -135,9 +182,28 @@ def rag_retrieval_node(state: AgentState) -> dict:
     if not user_msg:
         return {"retrieved_docs": []}
 
-    docs = retrieve_relevant_docs(user_msg, k=3)
-    logger.info(f"[RAG] Retrieved {len(docs)} docs for query: {user_msg[:60]!r}")
-    return {"retrieved_docs": docs}
+    try:
+        docs = retrieve_relevant_docs(user_msg, k=settings.RAG_TOP_K)
+        logger.info(
+            "RAG retrieval completed",
+            extra={
+                "num_docs": len(docs),
+                "query_preview": user_msg[:60],
+            }
+        )
+        return {"retrieved_docs": docs}
+        
+    except VectorStoreInitializationError as e:
+        logger.error(
+            "RAG retrieval failed due to vector store initialization error",
+            extra={
+                "error": str(e),
+                "query_preview": user_msg[:60],
+                "fallback": "returning empty docs"
+            }
+        )
+        # Graceful degradation: return empty docs to allow conversation to continue
+        return {"retrieved_docs": []}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -171,15 +237,13 @@ Rules:
   - If nothing new, return {{}}
 Return ONLY valid JSON with no markdown fences or explanation."""
 
-    llm = get_llm()
     try:
-        response = llm.invoke([
+        raw = call_llm([
             SystemMessage(
                 content="You extract structured data from conversations. Return only valid JSON."
             ),
             HumanMessage(content=extract_prompt),
         ])
-        raw = response.content.strip()
         # Strip markdown code fences if model adds them
         if "```" in raw:
             raw = raw.split("```")[1]
@@ -190,10 +254,17 @@ Return ONLY valid JSON with no markdown fences or explanation."""
         for key, value in extracted.items():
             if value and not lead_info.get(key):
                 lead_info[key] = value
-                logger.info(f"[Lead] Collected {key} = {value!r}")
+                logger.info(
+                    "Lead field collected",
+                    extra={"field": key, "value": value}
+                )
 
     except Exception as exc:
-        logger.warning(f"[Lead] Extraction failed: {exc}")
+        logger.warning(
+            "Lead extraction failed",
+            extra={"error": str(exc)},
+            exc_info=True
+        )
 
     is_ready = bool(
         lead_info.get("name")
@@ -201,7 +272,13 @@ Return ONLY valid JSON with no markdown fences or explanation."""
         and lead_info.get("platform")
     )
 
-    logger.info(f"[Lead] State → {lead_info} | ready={is_ready}")
+    logger.info(
+        "Lead qualification completed",
+        extra={
+            "lead_info": lead_info,
+            "is_ready": is_ready,
+        }
+    )
     return {"lead_info": lead_info, "is_ready_for_tool": is_ready}
 
 
@@ -222,7 +299,13 @@ def tool_execution_node(state: AgentState) -> dict:
         platform=lead_info["platform"],
     )
 
-    logger.info(f"[Tool] Lead capture result: {result}")
+    logger.info(
+        "Tool execution completed",
+        extra={
+            "result": result,
+            "lead_name": lead_info["name"],
+        }
+    )
 
     confirmation = (
         f"🎉 You're all set, **{lead_info['name']}**! "
@@ -254,7 +337,6 @@ def response_generator_node(state: AgentState) -> dict:
         return {"tool_executed": False}
 
     # ── Normal response generation ────────────────────────────────────
-    llm = get_llm()
     intent = state.get("intent", "greeting")
     retrieved_docs = state.get("retrieved_docs", [])
     lead_info = state.get("lead_info", {})
@@ -297,7 +379,14 @@ Guidelines:
 
     history = _build_lc_history(messages)
 
-    response = llm.invoke([SystemMessage(content=system_prompt), *history])
+    response_text = call_llm([SystemMessage(content=system_prompt), *history])
 
-    logger.info(f"[Response] intent={intent}, lead={lead_info}")
-    return {"response": response.content.strip()}
+    logger.info(
+        "Response generated",
+        extra={
+            "intent": intent,
+            "lead_info": lead_info,
+            "response_length": len(response_text),
+        }
+    )
+    return {"response": response_text.strip()}
