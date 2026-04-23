@@ -213,10 +213,50 @@ MAX_CONVERSATION_TURNS=6
 
 ---
 
-## 💻 Usage
+## 💻 How to Run the Project Locally
 
-### Development Mode
+### Prerequisites
+- **Python 3.9+** - [Download](https://www.python.org/downloads/)
+- **Node.js 18+** - [Download](https://nodejs.org/)
+- **Git** - [Download](https://git-scm.com/)
 
+### Step 1: Clone and Setup Backend
+```bash
+# Clone repository
+git clone https://github.com/yourusername/autostream-ai-agent.git
+cd autostream-ai-agent
+
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# Windows:
+venv\Scripts\activate
+# macOS/Linux:
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Step 2: Configure Environment
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Edit .env with your HuggingFace API key (free)
+# Get key from: https://huggingface.co/settings/tokens
+HUGGINGFACE_API_KEY=hf_your_token_here
+LLM_MODEL=meta-llama/Meta-Llama-3-8B-Instruct
+```
+
+### Step 3: Setup Frontend
+```bash
+cd frontend
+npm install
+```
+
+### Step 4: Run the Application
 **Terminal 1 - Backend:**
 ```bash
 cd backend
@@ -229,14 +269,12 @@ cd frontend
 npm start
 ```
 
-### Access Application
-
+### Step 5: Access Application
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8000
 - **API Docs**: http://localhost:8000/docs
 
 ### Test Conversation Flow
-
 1. Open http://localhost:3000
 2. Click "Sign Up" and create account
 3. Start conversation:
@@ -245,74 +283,156 @@ npm start
    Agent: [Explains pricing plans]
    
    You: "I want the Pro plan for YouTube"
-   Agent: [Asks for name]
+   Agent: [Asks for name, email, platform one by one]
    
-   You: "John Doe"
-   Agent: [Asks for email]
-   
-   You: "john@example.com"
-   Agent: [Captures lead + sends email]
+   Agent: [Captures lead + sends email notification]
    ```
 
 ---
 
-## 🏗 Architecture
+## 🏗 Architecture Explanation
 
-### System Overview
+### Why LangGraph?
 
-```
-┌─────────────┐      ┌──────────────┐      ┌─────────────┐
-│   React     │─────▶│   FastAPI    │─────▶│  LangGraph  │
-│  Frontend   │◀─────│   Backend    │◀─────│   Agent     │
-└─────────────┘      └──────────────┘      └─────────────┘
-                            │                      │
-                            ▼                      ▼
-                     ┌──────────────┐      ┌─────────────┐
-                     │    SMTP      │      │    FAISS    │
-                     │   Server     │      │ Vector Store│
-                     └──────────────┘      └─────────────┘
-```
+We chose **LangGraph** over AutoGen for several key reasons:
 
-### LangGraph State Machine
+1. **Deterministic State Flow**: LangGraph provides explicit state management through TypedDict schemas, ensuring predictable conversation flows and easier debugging compared to AutoGen's more implicit agent interactions.
 
-```
-classify_intent
-    ├─[inquiry/greeting]─► retrieve_docs ─► generate_response
-    └─[high_intent]──────► qualify_lead
-                               ├─[ready]──► execute_tool ─► generate_response
-                               └─[missing]─► generate_response
-```
+2. **Granular Control**: The StateGraph architecture allows precise control over conversation routing - we can conditionally route users between RAG retrieval, lead qualification, and tool execution based on intent classification.
 
-### Key Components
+3. **Production Readiness**: LangGraph's compiled graph approach offers better performance and reliability for production deployments, with clear separation between business logic (nodes) and flow control (edges).
 
-**1. Intent Classifier**
-- Analyzes user messages
-- Classifies into: greeting, inquiry, high_intent
-- Routes to appropriate handler
+4. **Scalable Architecture**: The modular node system makes it easy to extend functionality - adding new intents, tools, or conversation paths requires minimal changes to existing code.
 
-**2. RAG Retrieval**
-- Semantic search over knowledge base
-- FAISS vector store with embeddings
-- Returns top-3 relevant documents
+### State Management
 
-**3. Lead Qualification**
-- Extracts: name, email, platform
-- Validates completeness
-- Triggers tool when ready
+Our **AgentState** (TypedDict) maintains conversation context across all turns:
 
-**4. Tool Execution**
-- Calls `mock_lead_capture()`
-- Sends welcome email
-- Returns confirmation
+- **messages**: Complete conversation history with role-based message tracking
+- **intent**: Current user intent (greeting/inquiry/high_intent) driving conversation flow  
+- **lead_info**: Progressive lead capture (name, email, platform) with validation
+- **retrieved_docs**: RAG context from FAISS vector store for knowledge-based responses
+- **tool_executed**: Prevents duplicate tool calls and manages response generation
+- **session_id**: Enables multi-user concurrent conversations with isolated state
 
-**5. Response Generator**
-- Generates natural language replies
-- Injects RAG context
-- Handles multi-turn conversations
+The state flows through our graph topology: `classify_intent → retrieve_docs/qualify_lead → generate_response`, with each node updating relevant state fields. This approach ensures conversation continuity, prevents data loss, and enables complex multi-turn interactions while maintaining clean separation of concerns.
 
 ---
 
+## 📱 WhatsApp Integration with Webhooks
+
+### How to Integrate with WhatsApp Business API
+
+To deploy this agent on WhatsApp, we would implement webhook-based integration using the **WhatsApp Business API**:
+
+#### 1. Webhook Endpoint Setup
+```python
+@app.post("/whatsapp/webhook")
+async def whatsapp_webhook(request: WhatsAppWebhookRequest):
+    """Handle incoming WhatsApp messages via webhook"""
+    
+    # Extract message data
+    phone_number = request.entry[0].changes[0].value.contacts[0].wa_id
+    message_text = request.entry[0].changes[0].value.messages[0].text.body
+    
+    # Use phone number as session_id for state persistence
+    session_id = f"whatsapp_{phone_number}"
+    
+    # Process through existing LangGraph agent
+    if session_id not in sessions:
+        sessions[session_id] = _init_session(session_id)
+    
+    state = sessions[session_id]
+    state["messages"].append({"role": "user", "content": message_text})
+    
+    # Run agent graph
+    result = agent_graph.invoke(state)
+    agent_response = result.get("response", "Sorry, I couldn't process that.")
+    
+    # Send response back to WhatsApp
+    await send_whatsapp_message(phone_number, agent_response)
+    
+    return {"status": "success"}
+```
+
+#### 2. WhatsApp API Integration
+- **Setup**: Register with Meta Business, get WhatsApp Business API access
+- **Webhook URL**: Configure `https://yourdomain.com/whatsapp/webhook` in Meta Developer Console
+- **Verification**: Implement webhook verification for security
+- **Message Sending**: Use WhatsApp Business API to send responses back to users
+
+#### 3. Session Management
+- **Phone-based Sessions**: Use WhatsApp phone numbers as unique session identifiers
+- **State Persistence**: Maintain conversation context across message exchanges
+- **Lead Capture**: Same lead qualification flow works seamlessly in WhatsApp
+
+#### 4. Enhanced Features for WhatsApp
+- **Rich Media**: Send images, videos, and documents for product demos
+- **Quick Replies**: Use WhatsApp buttons for plan selection and confirmations  
+- **Template Messages**: Pre-approved templates for lead follow-ups and notifications
+- **Business Profile**: Integrate with WhatsApp Business Profile for credibility
+
 ## 🌐 Deployment
+
+### Option 1: Cloud Platforms
+
+**Backend (Railway/Render/Fly.io)**
+
+```bash
+# Railway
+railway up
+
+# Render
+render deploy
+
+# Fly.io
+fly deploy
+```
+
+**Frontend (Vercel/Netlify)**
+
+```bash
+# Vercel
+vercel deploy
+
+# Netlify
+netlify deploy
+```
+
+### Option 2: Docker
+
+```bash
+# Build and run
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop
+docker-compose down
+```
+
+### Option 3: Manual Server
+
+```bash
+# Backend
+cd backend
+gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+
+# Frontend
+cd frontend
+npm run build
+# Serve build/ folder with nginx or similar
+```
+
+### Environment Variables for Production
+
+```env
+# Production settings
+LOG_LEVEL=INFO
+CORS_ORIGINS=https://yourdomain.com
+LLM_TEMPERATURE=0.5
+```
 
 ### Option 1: Cloud Platforms
 
