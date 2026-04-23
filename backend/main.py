@@ -5,9 +5,11 @@ Endpoints:
   POST /chat    → Main chat endpoint; maintains session state across turns
   GET  /health  → Health check
   GET  /leads   → View all captured leads (admin/debug)
+  WS   /ws      → WebSocket for streaming + social media posting simulation
 """
 
 import uuid
+from datetime import datetime
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -19,31 +21,24 @@ import json
 from backend.agent.graph import agent_graph
 from backend.agent.state import AgentState
 from backend.agent.tools import get_all_leads
+from backend.agent.social_media_agent import run_social_media_agent
+from backend.auth.store import (
+    create_pending_user, complete_registration, login_user,
+    get_user_by_token, user_exists, get_registration_token_email, get_user_by_email
+)
 from backend.config.logging_config import setup_logging, get_logger
 from backend.config.settings import settings
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Logging Configuration
-# ─────────────────────────────────────────────────────────────────────────────
 setup_logging(level=settings.LOG_LEVEL, use_json=settings.LOG_JSON_FORMAT)
 logger = get_logger(__name__)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Validate Configuration
-# ─────────────────────────────────────────────────────────────────────────────
 try:
     settings.validate()
-    logger.info(
-        "Configuration validated successfully",
-        extra={"config": settings.get_info()}
-    )
+    logger.info("Configuration validated successfully", extra={"config": settings.get_info()})
 except ValueError as e:
     logger.error(f"Configuration validation failed: {e}")
     raise
 
-# ─────────────────────────────────────────────────────────────────────────────
-# App
-# ─────────────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title=settings.API_TITLE,
     description=settings.API_DESCRIPTION,
@@ -58,16 +53,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
-# In-memory session store
-# In production replace with Redis or a database.
-# ─────────────────────────────────────────────────────────────────────────────
 sessions: dict[str, AgentState] = {}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Schemas
 # ─────────────────────────────────────────────────────────────────────────────
+
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
@@ -81,95 +73,76 @@ class ChatResponse(BaseModel):
     lead_captured: bool
 
 
+class RegisterRequest(BaseModel):
+    token: str
+    password: str
+    social_accounts: dict = {}
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class ConnectSocialRequest(BaseModel):
+    session_token: str
+    platform: str
+    username: str
+    password: str
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper – init session state
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _init_session(session_id: str) -> AgentState:
+    return AgentState(
+        messages=[],
+        intent="",
+        retrieved_docs=[],
+        lead_info={},
+        is_ready_for_tool=False,
+        tool_executed=False,
+        response="",
+        session_id=session_id,
+        posting_triggered=False,
+        posting_platform="",
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Routes
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.get("/")
 async def root():
-    """Root endpoint with API information."""
     return {
         "service": settings.API_TITLE,
         "version": settings.API_VERSION,
-        "description": settings.API_DESCRIPTION,
-        "endpoints": {
-            "POST /chat": "Main chat endpoint - send messages to the AI agent",
-            "GET /health": "Health check endpoint",
-            "GET /leads": "View all captured leads",
-            "GET /docs": "Interactive API documentation (Swagger UI)"
-        },
-        "status": "running"
+        "status": "running",
     }
 
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    """
-    Main chat endpoint.
-
-    Maintains full conversation history and agent state per session_id.
-    Calls the LangGraph agent and returns the structured response.
-    """
     try:
         session_id = request.session_id or str(uuid.uuid4())
-        logger.info(
-            "Chat request received",
-            extra={
-                "session_id": session_id[:8],
-                "message_preview": request.message[:60],
-            }
-        )
 
-        # ── Get or initialise session state ──────────────────────────
         if session_id not in sessions:
-            sessions[session_id] = AgentState(
-                messages=[],
-                intent="",
-                retrieved_docs=[],
-                lead_info={},
-                is_ready_for_tool=False,
-                tool_executed=False,
-                response="",
-                session_id=session_id,
-            )
-            logger.info(
-                "New session initialized",
-                extra={"session_id": session_id[:8]}
-            )
-
+            sessions[session_id] = _init_session(session_id)
         state = sessions[session_id]
-
-        # ── Append user message ───────────────────────────────────────
         state["messages"].append({"role": "user", "content": request.message})
 
-        # ── Run the LangGraph agent ───────────────────────────────────
         result: AgentState = agent_graph.invoke(state)
-
-        # ── Merge result back into session ────────────────────────────
         sessions[session_id] = {**state, **result, "session_id": session_id}
 
-        # Append assistant reply to message history
         agent_response = result.get("response", "I'm sorry, I couldn't process that.")
-        sessions[session_id]["messages"].append(
-            {"role": "assistant", "content": agent_response}
-        )
+        sessions[session_id]["messages"].append({"role": "assistant", "content": agent_response})
 
         lead_info = result.get("lead_info", {})
         lead_captured = bool(
-            lead_info.get("name")
-            and lead_info.get("email")
-            and lead_info.get("platform")
-            and result.get("tool_executed") is False  # tool just finished
-        )
-
-        logger.info(
-            "Chat response generated",
-            extra={
-                "session_id": session_id[:8],
-                "intent": result.get("intent"),
-                "lead_info": lead_info,
-                "lead_captured": lead_captured,
-            }
+            lead_info.get("name") and lead_info.get("email") and lead_info.get("platform")
+            and result.get("tool_executed") is False
         )
 
         return ChatResponse(
@@ -181,147 +154,206 @@ async def chat(request: ChatRequest):
         )
 
     except Exception as exc:
-        logger.error(
-            "Error in /chat endpoint",
-            extra={"error": str(exc)},
-            exc_info=True
-        )
+        logger.error("Error in /chat endpoint", extra={"error": str(exc)}, exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/health")
 async def health():
-    """Health check endpoint."""
-    logger.info("Health check requested")
-    return {
-        "status": "healthy",
-        "service": settings.API_TITLE,
-        "version": settings.API_VERSION,
-    }
+    return {"status": "healthy", "service": settings.API_TITLE, "version": settings.API_VERSION}
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time streaming responses."""
+    """
+    WebSocket endpoint handling:
+      1. Real-time streaming chat responses (word-by-word)
+      2. Social media posting simulation (stage-by-stage) after lead capture
+    """
     await websocket.accept()
     session_id = None
-    
+
     try:
         while True:
-            # Receive message from client
             data = await websocket.receive_text()
             message_data = json.loads(data)
-            
+
             user_message = message_data.get("message", "")
             session_id = message_data.get("session_id") or str(uuid.uuid4())
-            
+
             if not user_message:
                 continue
-                
-            logger.info(
-                "WebSocket message received",
-                extra={
-                    "session_id": session_id[:8],
-                    "message_preview": user_message[:60],
-                }
-            )
-            
-            # Get or initialize session state
+
+            # ── Init session ──────────────────────────────────────────
             if session_id not in sessions:
-                sessions[session_id] = AgentState(
-                    messages=[],
-                    intent="",
-                    retrieved_docs=[],
-                    lead_info={},
-                    is_ready_for_tool=False,
-                    tool_executed=False,
-                    response="",
-                    session_id=session_id,
-                )
-            
+                sessions[session_id] = _init_session(session_id)
+
             state = sessions[session_id]
             state["messages"].append({"role": "user", "content": user_message})
-            
-            # Send typing indicator
-            await websocket.send_text(json.dumps({
-                "type": "typing",
-                "session_id": session_id
-            }))
-            
-            # Process with agent
+
+            # ── Typing indicator ──────────────────────────────────────
+            await websocket.send_text(json.dumps({"type": "typing", "session_id": session_id}))
+
+            # ── Run LangGraph agent ───────────────────────────────────
             result: AgentState = agent_graph.invoke(state)
             sessions[session_id] = {**state, **result, "session_id": session_id}
-            
-            # Stream response word by word
+
             agent_response = result.get("response", "I'm sorry, I couldn't process that.")
-            sessions[session_id]["messages"].append(
-                {"role": "assistant", "content": agent_response}
+            sessions[session_id]["messages"].append({"role": "assistant", "content": agent_response})
+
+            lead_info = result.get("lead_info", {})
+            lead_captured = bool(
+                lead_info.get("name") and lead_info.get("email") and lead_info.get("platform")
+                and result.get("tool_executed") is False
             )
-            
-            # Send streaming response
+
+            # ── Stream response word-by-word ──────────────────────────
             words = agent_response.split()
             streamed_text = ""
-            
             for i, word in enumerate(words):
                 streamed_text += word + " "
-                
                 await websocket.send_text(json.dumps({
                     "type": "stream",
                     "content": streamed_text.strip(),
                     "session_id": session_id,
                     "intent": result.get("intent", ""),
-                    "lead_info": result.get("lead_info", {}),
-                    "lead_captured": bool(
-                        result.get("lead_info", {}).get("name") and
-                        result.get("lead_info", {}).get("email") and
-                        result.get("lead_info", {}).get("platform") and
-                        result.get("tool_executed") is False
-                    ),
-                    "is_complete": False
+                    "lead_info": lead_info,
+                    "lead_captured": lead_captured,
+                    "is_complete": False,
                 }))
-                
-                # Add realistic typing delay
-                await asyncio.sleep(0.05 if i < len(words) - 1 else 0.1)
-            
-            # Send completion signal
+                await asyncio.sleep(0.05)
+
+            # ── Complete signal ───────────────────────────────────────
             await websocket.send_text(json.dumps({
                 "type": "complete",
                 "content": agent_response,
                 "session_id": session_id,
                 "intent": result.get("intent", ""),
-                "lead_info": result.get("lead_info", {}),
-                "lead_captured": bool(
-                    result.get("lead_info", {}).get("name") and
-                    result.get("lead_info", {}).get("email") and
-                    result.get("lead_info", {}).get("platform") and
-                    result.get("tool_executed") is False
-                ),
-                "is_complete": True
+                "lead_info": lead_info,
+                "lead_captured": lead_captured,
+                "posting_triggered": result.get("posting_triggered", False),
+                "posting_platform": result.get("posting_platform", ""),
+                "is_complete": True,
             }))
-            
+
+            # ── Social media posting — REAL AGENT ────────────────────
+            if result.get("posting_triggered") and result.get("posting_platform"):
+                platform = result["posting_platform"]
+                lead_name = result.get("lead_info", {}).get("name", "Creator")
+                logger.info(f"Starting real social media agent for {platform}")
+
+                await websocket.send_text(json.dumps({
+                    "type": "agent_start",
+                    "platform": platform,
+                    "session_id": session_id,
+                    "message": f"🤖 Launching autonomous agent for {platform}...",
+                }))
+
+                async for event in run_social_media_agent(platform, lead_name):
+                    await websocket.send_text(json.dumps({
+                        **event,
+                        "session_id": session_id,
+                    }))
+                    await asyncio.sleep(0.1)
+
+                sessions[session_id]["posting_triggered"] = False
+
     except WebSocketDisconnect:
-        logger.info(
-            "WebSocket disconnected",
-            extra={"session_id": session_id[:8] if session_id else "unknown"}
-        )
+        logger.info("WebSocket disconnected", extra={"session_id": (session_id or "")[:8]})
     except Exception as exc:
-        logger.error(
-            "WebSocket error",
-            extra={"error": str(exc)},
-            exc_info=True
-        )
-        await websocket.send_text(json.dumps({
-            "type": "error",
-            "message": "An error occurred while processing your message."
-        }))
+        logger.error("WebSocket error", extra={"error": str(exc)}, exc_info=True)
+        try:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": "An error occurred while processing your message.",
+            }))
+        except Exception:
+            pass
 
 
 @app.get("/leads")
 async def list_leads():
-    """Return all captured leads (for demo / admin purposes)."""
     leads = get_all_leads()
-    logger.info(
-        "Leads list requested",
-        extra={"total_leads": len(leads)}
-    )
     return {"leads": leads, "total": len(leads)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Auth Routes
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get("/auth/check-token/{token}")
+async def check_registration_token(token: str):
+    """Check if a registration token is valid and return user info."""
+    email = get_registration_token_email(token)
+    if not email:
+        raise HTTPException(status_code=404, detail="Invalid or expired registration link")
+    user = get_user_by_email(email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "valid": True,
+        "name": user["name"],
+        "email": user["email"],
+        "platform": user["platform"],
+        "plan": user["plan"],
+    }
+
+
+@app.post("/auth/register")
+async def register(request: RegisterRequest):
+    """Complete registration — set password and connect social accounts."""
+    if len(request.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    user = complete_registration(request.token, request.password, request.social_accounts)
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired registration link")
+
+    return {"success": True, "user": user, "message": "Account activated successfully!"}
+
+
+@app.post("/auth/login")
+async def login(request: LoginRequest):
+    """Login with email and password."""
+    result = login_user(request.email, request.password)
+    if not result:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    return {"success": True, "user": result["user"], "token": result["token"]}
+
+
+@app.get("/auth/profile")
+async def get_profile(session_token: str):
+    """Get user profile by session token."""
+    user = get_user_by_token(session_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    return {"user": user}
+
+
+@app.post("/auth/connect-social")
+async def connect_social(request: ConnectSocialRequest):
+    """Connect a social media account to the user's profile."""
+    from backend.auth.store import update_social_accounts, sessions
+    email = sessions.get(request.session_token)
+    if not email:
+        raise HTTPException(status_code=401, detail="Invalid session")
+
+    social_data = {
+        request.platform: {
+            "username": request.username,
+            "connected": True,
+            "connected_at": datetime.now().isoformat(),
+        }
+    }
+    user = update_social_accounts(email, social_data)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {"success": True, "user": user, "message": f"{request.platform} connected successfully"}
+
+
+@app.get("/auth/check-user/{email}")
+async def check_user_exists(email: str):
+    """Check if a user with this email is already registered."""
+    exists = user_exists(email)
+    return {"exists": exists}

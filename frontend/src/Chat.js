@@ -1,8 +1,111 @@
 import React, { useState, useRef, useEffect } from "react";
 import { sendMessage } from "./api";
-import { streamingWS } from "./websocket";
+import { streamingWS, initWebSocket } from "./websocket";
 import { voiceManager, isVoiceSupported, cleanTextForSpeech } from "./voice";
 import "./Chat.css";
+
+/* ─── Platform branding config ──────────────────────────────────────────── */
+const PLATFORM_CONFIG = {
+  Instagram: {
+    gradient: "linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)",
+    icon: "📷",
+    color: "#E4405F",
+    bg: "rgba(228, 64, 95, 0.1)",
+    border: "rgba(228, 64, 95, 0.3)",
+  },
+  TikTok: {
+    gradient: "linear-gradient(45deg, #010101, #FF0050, #00F2EA)",
+    icon: "🎵",
+    color: "#FF0050",
+    bg: "rgba(255, 0, 80, 0.1)",
+    border: "rgba(255, 0, 80, 0.3)",
+  },
+  YouTube: {
+    gradient: "linear-gradient(45deg, #FF0000, #CC0000, #282828)",
+    icon: "▶️",
+    color: "#FF0000",
+    bg: "rgba(255, 0, 0, 0.1)",
+    border: "rgba(255, 0, 0, 0.3)",
+  },
+};
+
+/* ─── Agent Trace Panel — shows real ReAct reasoning ───────────────────── */
+function PostingPanel({ postingState }) {
+  if (!postingState.active) return null;
+
+  const cfg = PLATFORM_CONFIG[postingState.platform] || {};
+  const isComplete = postingState.status === "complete";
+  const isError = postingState.status === "error";
+
+  const TOOL_ICONS = {
+    connect_to_platform: "🔗",
+    generate_post_content: "📝",
+    post_to_platform: "🚀",
+    check_post_analytics: "📊",
+  };
+
+  return (
+    <div className="posting-panel" style={{ borderColor: cfg.border }}>
+      {/* Header */}
+      <div className="posting-header" style={{ background: cfg.gradient }}>
+        <span className="posting-platform-icon">{cfg.icon}</span>
+        <span className="posting-platform-name">{postingState.platform} Agent</span>
+        <span className="posting-status-badge">
+          {isComplete ? "✅ Done" : isError ? "❌ Error" : "🤖 Running..."}
+        </span>
+      </div>
+
+      {/* Agent steps trace */}
+      <div className="agent-trace">
+        {(postingState.steps || []).map((step, i) => (
+          <div key={i} className={`agent-step agent-step-${step.type}`}>
+            {step.type === "action" && (
+              <div className="agent-action-row">
+                <span className="agent-tool-icon">{TOOL_ICONS[step.tool] || "🔧"}</span>
+                <span className="agent-tool-name">{step.tool}</span>
+              </div>
+            )}
+            {step.type === "observation" && step.result?.success && (
+              <div className="agent-obs-row">
+                <span className="agent-obs-icon">✅</span>
+                <span className="agent-obs-msg">{step.result.message || "Success"}</span>
+              </div>
+            )}
+            {step.type === "observation" && !step.result?.success && (
+              <div className="agent-obs-row error">
+                <span className="agent-obs-icon">❌</span>
+                <span className="agent-obs-msg">{step.result?.error || "Failed"}</span>
+              </div>
+            )}
+          </div>
+        ))}
+
+        {/* Current step indicator */}
+        {!isComplete && !isError && postingState.currentStep && (
+          <div className="agent-current-step">
+            <span className="agent-spinner">⟳</span>
+            <span>{postingState.currentStep}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Final answer */}
+      {isComplete && postingState.finalAnswer && (
+        <div className="agent-final-answer">
+          <div className="agent-final-title">🎉 Agent Report</div>
+          <div className="agent-final-text">{postingState.finalAnswer}</div>
+          <div className="agent-steps-count">
+            {postingState.stepsCount} tool calls executed autonomously
+          </div>
+        </div>
+      )}
+
+      {isError && (
+        <div className="agent-error-msg">{postingState.currentStep}</div>
+      )}
+    </div>
+  );
+}
 
 /* ─── Intent badge colours (Dark Theme) ────────────────────────────────────────────── */
 const INTENT_STYLES = {
@@ -97,6 +200,15 @@ export default function Chat({ user, onLogout }) {
   const [isSpeaking,   setIsSpeaking]   = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
+  const [postingState, setPostingState] = useState({
+    active: false,
+    platform: null,
+    status: "idle",   // idle | posting | complete
+    stage: "",
+    progress: 0,
+    account: null,
+    result: null,
+  });
   const bottomRef = useRef(null);
 
   /* Scroll to bottom on new messages */
@@ -104,17 +216,24 @@ export default function Chat({ user, onLogout }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingMessage]);
 
-  /* Welcome message on mount */
+  /* Welcome message on mount + init WebSocket */
   useEffect(() => {
+    // Connect WebSocket only when chat page is active
+    initWebSocket();
+
     const userName = user?.name || "there";
     setMessages([{
       role: "assistant",
       content: `👋 Hi **${userName}**! I'm the AutoStream AI assistant. I can help you with pricing, features, and getting started. How can I help you today?`,
       time: now(),
     }]);
-    
-    // Check voice support
+
     setVoiceSupported(isVoiceSupported());
+
+    return () => {
+      // Disconnect when leaving chat
+      streamingWS.destroyed = true;
+    };
   }, [user]);
 
   /* Voice event handlers */
@@ -184,7 +303,7 @@ export default function Chat({ user, onLogout }) {
     const handleComplete = (data) => {
       setIsStreaming(false);
       setStreamingMessage("");
-      
+
       if (!sessionId) setSessionId(data.session_id);
       setIntent(data.intent);
       setLeadInfo(data.lead_info || {});
@@ -194,11 +313,9 @@ export default function Chat({ user, onLogout }) {
         ...prev,
         { role: "assistant", content: data.content, time: now() },
       ]);
-      
-      // Speak the response if voice is enabled
+
       if (voiceSupported && !isSpeaking) {
-        const cleanText = cleanTextForSpeech(data.content);
-        voiceManager.speak(cleanText);
+        voiceManager.speak(cleanTextForSpeech(data.content));
       }
     };
 
@@ -209,11 +326,77 @@ export default function Chat({ user, onLogout }) {
       setError(data.message || "Connection error occurred");
     };
 
+    // ── Social media posting handlers ─────────────────────────────
+    const handleAgentStart = (data) => {
+      setPostingState({
+        active: true,
+        platform: data.platform,
+        status: "running",
+        currentStep: data.message,
+        steps: [],
+        result: null,
+        finalAnswer: null,
+      });
+    };
+
+    const handleAgentThought = (data) => {
+      setPostingState(prev => ({
+        ...prev,
+        active: true,
+        platform: data.platform,
+        status: "running",
+        currentStep: data.content,
+        steps: [...(prev.steps || []), { type: "thought", content: data.content }],
+      }));
+    };
+
+    const handleAgentAction = (data) => {
+      setPostingState(prev => ({
+        ...prev,
+        status: "running",
+        currentStep: `🔧 Calling: ${data.tool}`,
+        steps: [...(prev.steps || []), { type: "action", tool: data.tool, input: data.tool_input }],
+      }));
+    };
+
+    const handleAgentObservation = (data) => {
+      setPostingState(prev => ({
+        ...prev,
+        status: "running",
+        currentStep: `✅ ${data.tool} done`,
+        steps: [...(prev.steps || []), { type: "observation", tool: data.tool, result: data.result }],
+      }));
+    };
+
+    const handleAgentComplete = (data) => {
+      setPostingState(prev => ({
+        ...prev,
+        status: "complete",
+        currentStep: "Done!",
+        finalAnswer: data.final_answer,
+        stepsCount: data.steps_taken,
+      }));
+    };
+
+    const handleAgentError = (data) => {
+      setPostingState(prev => ({
+        ...prev,
+        status: "error",
+        currentStep: data.content,
+      }));
+    };
+
     // Register WebSocket handlers
     streamingWS.on('typing', handleTyping);
     streamingWS.on('stream', handleStream);
     streamingWS.on('complete', handleComplete);
     streamingWS.on('error', handleError);
+    streamingWS.on('agent_start', handleAgentStart);
+    streamingWS.on('agent_thought', handleAgentThought);
+    streamingWS.on('agent_action', handleAgentAction);
+    streamingWS.on('agent_observation', handleAgentObservation);
+    streamingWS.on('agent_complete', handleAgentComplete);
+    streamingWS.on('agent_error', handleAgentError);
 
     // Cleanup
     return () => {
@@ -221,6 +404,12 @@ export default function Chat({ user, onLogout }) {
       streamingWS.off('stream', handleStream);
       streamingWS.off('complete', handleComplete);
       streamingWS.off('error', handleError);
+      streamingWS.off('agent_start', handleAgentStart);
+      streamingWS.off('agent_thought', handleAgentThought);
+      streamingWS.off('agent_action', handleAgentAction);
+      streamingWS.off('agent_observation', handleAgentObservation);
+      streamingWS.off('agent_complete', handleAgentComplete);
+      streamingWS.off('agent_error', handleAgentError);
     };
   }, [sessionId]);
 
@@ -288,6 +477,7 @@ export default function Chat({ user, onLogout }) {
     setIsListening(false);
     setIsSpeaking(false);
     setInterimTranscript("");
+    setPostingState({ active: false, platform: null, status: "idle", stage: "", progress: 0, account: null, result: null });
     voiceManager.stopSpeaking();
     voiceManager.stopListening();
   }
@@ -343,6 +533,11 @@ export default function Chat({ user, onLogout }) {
               {intentStyle.label}
             </div>
           )}
+
+          <button className="new-chat-btn" onClick={handleNewChat}>
+            <span>✏️</span>
+            <span>New Chat</span>
+          </button>
           
           {user && (
             <div className="user-section">
@@ -412,6 +607,9 @@ export default function Chat({ user, onLogout }) {
         {/* Lead panel (sidebar) */}
         <LeadPanel leadInfo={leadInfo} leadCaptured={leadCaptured} />
       </div>
+
+      {/* ── Posting Progress Overlay ── */}
+      <PostingPanel postingState={postingState} />
 
       {/* ── Input ── */}
       <div className="chat-input-container">

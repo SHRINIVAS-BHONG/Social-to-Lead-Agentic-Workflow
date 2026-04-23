@@ -8,7 +8,7 @@ class AgentState(TypedDict):
     """
     Structured state object maintained across all conversation turns.
     LangGraph merges returned dicts from each node into this shared state.
-    
+
     Fields:
         messages: Full conversation history [{role, content}]
         intent: Current intent classification (greeting | inquiry | high_intent)
@@ -18,6 +18,8 @@ class AgentState(TypedDict):
         tool_executed: Flag to prevent response_generator overwriting tool response
         response: Final agent response for this turn
         session_id: Unique session identifier
+        posting_triggered: True when social media posting should start
+        posting_platform: Platform to post to (Instagram | TikTok | YouTube)
     """
     messages: List[dict]
     intent: str
@@ -27,6 +29,8 @@ class AgentState(TypedDict):
     tool_executed: bool
     response: str
     session_id: str
+    posting_triggered: bool
+    posting_platform: str
 
 
 def create_initial_state(session_id: str) -> AgentState:
@@ -47,7 +51,9 @@ def create_initial_state(session_id: str) -> AgentState:
         is_ready_for_tool=False,
         tool_executed=False,
         response="",
-        session_id=session_id
+        session_id=session_id,
+        posting_triggered=False,
+        posting_platform="",
     )
 
 

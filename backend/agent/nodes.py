@@ -461,13 +461,15 @@ def tool_execution_node(state: AgentState) -> dict:
     """
     Called ONLY when all three lead fields are present.
     Invokes mock_lead_capture() and sets the final confirmation response.
+    Also triggers social media posting simulation.
     """
     lead_info = state.get("lead_info", {})
+    platform = lead_info.get("platform", "")
 
     result = mock_lead_capture(
         name=lead_info["name"],
         email=lead_info["email"],
-        platform=lead_info["platform"],
+        platform=platform,
     )
 
     logger.info(
@@ -478,17 +480,29 @@ def tool_execution_node(state: AgentState) -> dict:
         }
     )
 
+    # Determine if platform supports posting simulation
+    posting_platforms = {"Instagram", "TikTok", "YouTube"}
+    should_post = platform in posting_platforms
+
     confirmation = (
         f"🎉 You're all set, **{lead_info['name']}**! "
         f"I've registered your interest in AutoStream Pro. "
         f"Our team will reach out to you at **{lead_info['email']}** within 24 hours. "
-        f"We're excited to help your {lead_info['platform']} channel grow with AutoStream!"
+        f"We're excited to help your {platform} channel grow with AutoStream!"
     )
+
+    if should_post:
+        confirmation += (
+            f"\n\n🚀 **Bonus:** I'm now connecting to your **{platform}** account "
+            f"to post a sample AutoStream content demo — watch the magic happen!"
+        )
 
     return {
         "response": confirmation,
         "tool_executed": True,
-        "is_ready_for_tool": False,   # Prevent re-triggering on next turn
+        "is_ready_for_tool": False,
+        "posting_triggered": should_post,
+        "posting_platform": platform if should_post else "",
     }
 
 

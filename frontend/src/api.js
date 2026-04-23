@@ -1,31 +1,62 @@
-const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
+const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000";
 
-/**
- * Send a chat message to the AutoStream AI Agent backend.
- *
- * @param {string} message   - The user's message text
- * @param {string|null} sessionId - Existing session ID (null for new session)
- * @returns {Promise<{response, session_id, intent, lead_info, lead_captured}>}
- */
-export async function sendMessage(message, sessionId) {
-  const res = await fetch(`${API_BASE_URL}/chat`, {
-    method: "POST",
+async function request(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, session_id: sessionId }),
+    ...options,
   });
-
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Unknown error" }));
-    throw new Error(error.detail || `HTTP ${res.status}`);
-  }
-
-  return res.json();
+  const data = await res.json().catch(() => ({ detail: "Unknown error" }));
+  if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+  return data;
 }
 
-/**
- * Fetch the health status of the backend.
- */
+// ── Chat ──────────────────────────────────────────────────────────────────────
+export async function sendMessage(message, sessionId) {
+  return request("/chat", {
+    method: "POST",
+    body: JSON.stringify({ message, session_id: sessionId }),
+  });
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+export async function checkRegistrationToken(token) {
+  return request(`/auth/check-token/${token}`);
+}
+
+export async function registerUser(token, password, socialAccounts) {
+  return request("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ token, password, social_accounts: socialAccounts }),
+  });
+}
+
+export async function loginUser(email, password) {
+  return request("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function getProfile(sessionToken) {
+  return request(`/auth/profile?session_token=${sessionToken}`);
+}
+
+export async function connectSocial(sessionToken, platform, username, password) {
+  return request("/auth/connect-social", {
+    method: "POST",
+    body: JSON.stringify({
+      session_token: sessionToken,
+      platform,
+      username,
+      password,
+    }),
+  });
+}
+
+export async function checkUserExists(email) {
+  return request(`/auth/check-user/${encodeURIComponent(email)}`);
+}
+
 export async function checkHealth() {
-  const res = await fetch(`${API_BASE_URL}/health`);
-  return res.json();
+  return request("/health");
 }
